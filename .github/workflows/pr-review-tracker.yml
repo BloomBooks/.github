@@ -1,0 +1,72 @@
+# Shared, reusable automation for the "PR Review Tracker" org project
+# (BloomBooks org project #2: https://github.com/orgs/BloomBooks/projects/2).
+#
+# Each participating repo has a thin caller workflow that forwards its
+# pull_request events here (see that repo's .github/workflows/pr-review.yml).
+#
+# Rules implemented:
+#   - PR opened/reopened  -> add to the project, Status = "Waiting for AI-Review"
+#   - new commit pushed (pull_request `synchronize`) -> Status back to "Waiting"
+#
+# The project node IDs below belong to the project itself, so they are the same
+# no matter which repo calls this workflow. If the project (or its Status field
+# options) is recreated, update the three IDs here in this one place.
+#
+# Auth: the default GITHUB_TOKEN cannot write org Projects (v2). Callers pass an
+# org-level secret PROJECT_TOKEN via `secrets: inherit` (a classic PAT with the
+# `project` scope, or a GitHub App token with org Projects read+write).
+name: PR Review Tracker (reusable)
+
+on:
+    workflow_call:
+        secrets:
+            PROJECT_TOKEN:
+                description: Token that can write to the BloomBooks org project.
+                required: true
+
+# Only one run per PR at a time; newer pushes supersede in-flight runs.
+concurrency:
+    group: pr-review-tracker-${{ github.repository }}-${{ github.event.pull_request.number }}
+    cancel-in-progress: true
+
+jobs:
+    set-waiting:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Set Status to "Waiting for AI-Review"
+              env:
+                  GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
+                  PROJECT_ID: PVT_kwDOAFlSFM4Bawkp
+                  STATUS_FIELD_ID: PVTSSF_lADOAFlSFM4BawkpzhVl0_w
+                  WAITING_OPTION_ID: "97860183"
+                  PR_NODE_ID: ${{ github.event.pull_request.node_id }}
+              run: |
+                  set -euo pipefail
+
+                  # Add the PR to the project (idempotent: returns the existing
+                  # item id if the PR is already on the board).
+                  ITEM_ID=$(gh api graphql -f query='
+                    mutation($projectId: ID!, $contentId: ID!) {
+                      addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) {
+                        item { id }
+                      }
+                    }' -f projectId="$PROJECT_ID" -f contentId="$PR_NODE_ID" \
+                    --jq '.data.addProjectV2ItemById.item.id')
+
+                  echo "Project item: $ITEM_ID"
+
+                  # Set its Status to "Waiting for AI-Review".
+                  gh api graphql -f query='
+                    mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
+                      updateProjectV2ItemFieldValue(input: {
+                        projectId: $projectId,
+                        itemId: $itemId,
+                        fieldId: $fieldId,
+                        value: { singleSelectOptionId: $optionId }
+                      }) {
+                        projectV2Item { id }
+                      }
+                    }' -f projectId="$PROJECT_ID" -f itemId="$ITEM_ID" \
+                       -f fieldId="$STATUS_FIELD_ID" -f optionId="$WAITING_OPTION_ID"
+
+                  echo "Status set to Waiting for AI-Review."
