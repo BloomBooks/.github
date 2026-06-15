@@ -13,14 +13,14 @@
 # options) is recreated, update the three IDs here in this one place.
 #
 # Auth: the default GITHUB_TOKEN cannot write org Projects (v2). Callers pass an
-# org-level secret PROJECT_TOKEN via `secrets: inherit` (a classic PAT with the
-# `project` scope, or a GitHub App token with org Projects read+write).
+# org-level secret PR_REVIEW_TRACKER_PROJECT_TOKEN by mapping it explicitly (a
+# fine-grained PAT with org Projects read+write; BloomBooks blocks classic PATs).
 name: PR Review Tracker (reusable)
 
 on:
     workflow_call:
         secrets:
-            PROJECT_TOKEN:
+            PR_REVIEW_TRACKER_PROJECT_TOKEN:
                 description: Token that can write to the BloomBooks org project.
                 required: true
 
@@ -35,7 +35,7 @@ jobs:
         steps:
             - name: Set Status to "Waiting for AI-Review"
               env:
-                  GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
+                  GH_TOKEN: ${{ secrets.PR_REVIEW_TRACKER_PROJECT_TOKEN }}
                   PROJECT_ID: PVT_kwDOAFlSFM4Bawkp
                   STATUS_FIELD_ID: PVTSSF_lADOAFlSFM4BawkpzhVl0_w
                   WAITING_OPTION_ID: "97860183"
